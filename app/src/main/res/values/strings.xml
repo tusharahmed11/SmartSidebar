@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">Smart SideBar</string>
+    <string name="notification_channel_name">SideBar Overlay Service</string>
+    <string name="notification_channel_description">Keeps the edge-anchored quick launcher handle active.</string>
+    <string name="notification_active_title">SideBar is active</string>
+    <string name="notification_active_text">Swipe or tap the right edge handle to open shortcuts.</string>
+    <string name="notification_crash_loop_title">SideBar paused due to repeated restarts</string>
+    <string name="notification_crash_loop_text">Open SideBar to re-enable the overlay service.</string>
+    <string name="permission_overlay_title">Overlay Permission Required</string>
+    <string name="permission_overlay_rationale">SideBar needs permission to display an edge handle over other applications so you can launch pinned shortcuts from any screen.</string>
+    <string name="permission_grant_button">Grant Overlay Permission</string>
+    <string name="service_toggle_title">Enable SideBar Overlay</string>
+    <string name="service_toggle_subtitle_running">Edge handle is active on the right screen edge</string>
+    <string name="service_toggle_subtitle_stopped">Overlay service is stopped</string>
+    <string name="edit_shortcuts_button">Edit Shortcuts</string>
+    <string name="drawer_empty_state">No apps pinned yet.\nTap Edit Shortcuts to select apps.</string>
+    <string name="search_apps_placeholder">Search installed apps…</string>
+    <string name="repositioning_toggle_title">Allow Moving Position</string>
+    <string name="repositioning_toggle_subtitle_enabled">Drag the handle or sidebar card to move its position along the screen edge</string>
+    <string name="repositioning_toggle_subtitle_disabled">Position is locked to prevent accidental movement</string>
+    <string name="battery_optimization_title">Keep Active in Background</string>
+    <string name="battery_optimization_subtitle">Prevent Android from closing the sidebar when the app is cleared from recent apps.</string>
+    <string name="battery_optimization_button">Allow</string>
+</resources>
