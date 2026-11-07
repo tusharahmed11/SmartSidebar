@@ -5,6 +5,8 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -39,8 +41,6 @@ class OverlayWindowManager(
     private val windowManager: WindowManager,
     private val ringBuffer: DiagnosticRingBuffer,
     private val pinnedShortcutsFlow: StateFlow<List<AppShortcut>>,
-    private val isRepositioningEnabledFlow: StateFlow<Boolean>,
-    private val onPersistHandleY: (Int) -> Unit,
     private val onLaunchPackage: (String) -> Unit,
     private val onOpenMainActivity: () -> Unit
 ) {
@@ -59,6 +59,7 @@ class OverlayWindowManager(
 
     private var isDrawerAttached: Boolean = false
     private var lastAppliedExclusionRect: Rect? = null
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
     private val density: Float
         get() = context.resources.displayMetrics.density
@@ -135,13 +136,10 @@ class OverlayWindowManager(
         val view = ComposeView(context).apply {
             handleLifecycleOwner.attachToComposeView(this)
             setContent {
-                val isRepositioningEnabled by isRepositioningEnabledFlow.collectAsStateWithLifecycle()
                 SmartSidebarTheme {
                     SidebarHandle(
-                        isRepositioningEnabled = isRepositioningEnabled,
-                        onOpenDrawer = { openDrawer() },
-                        onVerticalDragDelta = { deltaY -> updateHandleY(deltaY) },
-                        onVerticalDragEnd = { commitHandlePosition() }
+                        isRepositioningEnabled = false,
+                        onOpenDrawer = { openDrawer() }
                     )
                 }
             }
@@ -166,39 +164,11 @@ class OverlayWindowManager(
         }
     }
 
-    fun updateHandleY(deltaY: Float) {
-        val view = handleView ?: return
-        val params = handleParams ?: return
-        val bounds = getSafeBounds(viewHeightPx = handleHeightPx)
-
-        currentHandleY = clampCoordinate(
-            yPx = currentHandleY + deltaY.roundToInt(),
-            screenHeightPx = bounds.screenHeightPx,
-            viewHeightPx = handleHeightPx,
-            topInsetPx = bounds.topInsetPx,
-            bottomInsetPx = bounds.bottomInsetPx,
-            marginPx = (DEFAULT_MARGIN_DP * density).roundToInt()
-        )
-        handleYMutableFlow.value = currentHandleY
-        params.y = currentHandleY
-
-        runCatching {
-            windowManager.updateViewLayout(view, params)
-        }.onFailure { error ->
-            ringBuffer.record("WINDOW_UPDATE_ERROR", "updateHandleY failed: ${error.message}")
-        }
-    }
-
-    fun commitHandlePosition() {
-        val view = handleView
-        if (view != null && !isDrawerAttached) {
-            applyHandleGestureExclusion(view)
-        }
-        onPersistHandleY(currentHandleY)
-        ringBuffer.record("HANDLE_DRAG_END", "Committed handle Y=$currentHandleY")
-    }
-
     fun setHandleYFromPersistence(savedY: Int) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { setHandleYFromPersistence(savedY) }
+            return
+        }
         val bounds = getSafeBounds(viewHeightPx = handleHeightPx)
         val clamped = clampCoordinate(
             yPx = savedY,
@@ -216,6 +186,9 @@ class OverlayWindowManager(
         params.y = currentHandleY
         runCatching {
             windowManager.updateViewLayout(view, params)
+            if (!isDrawerAttached) {
+                applyHandleGestureExclusion(view)
+            }
         }
     }
 
@@ -250,7 +223,6 @@ class OverlayWindowManager(
             drawerLifecycleOwner.attachToComposeView(this)
             setContent {
                 val shortcuts by pinnedShortcutsFlow.collectAsStateWithLifecycle()
-                val isRepositioningEnabled by isRepositioningEnabledFlow.collectAsStateWithLifecycle()
                 val handleY by handleYFlow.collectAsStateWithLifecycle()
                 val bounds = getSafeBounds(viewHeightPx = handleHeightPx)
                 val marginPx = (DEFAULT_MARGIN_DP * density).roundToInt()
@@ -259,11 +231,9 @@ class OverlayWindowManager(
                     SidebarDrawer(
                         pinnedApps = shortcuts,
                         handleYOffsetPx = handleY,
-                        isRepositioningEnabled = isRepositioningEnabled,
+                        isRepositioningEnabled = false,
                         minSafeYPx = bounds.minY,
                         maxSafeYPx = bounds.screenHeightPx - bounds.bottomInsetPx - marginPx,
-                        onVerticalDragDelta = { deltaY -> updateHandleY(deltaY) },
-                        onVerticalDragEnd = { commitHandlePosition() },
                         onAppClick = { packageName ->
                             closeDrawer()
                             onLaunchPackage(packageName)
@@ -307,6 +277,28 @@ class OverlayWindowManager(
         }
 
         handleView?.let { applyHandleGestureExclusion(it) }
+    }
+
+    fun setHandleVisibility(visible: Boolean) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { setHandleVisibility(visible) }
+            return
+        }
+        val view = handleView ?: return
+        val targetVisibility = if (visible) View.VISIBLE else View.GONE
+        if (view.visibility != targetVisibility) {
+            view.visibility = targetVisibility
+            if (visible) {
+                if (!isDrawerAttached) {
+                    applyHandleGestureExclusion(view)
+                }
+                ringBuffer.record("HANDLE_VISIBILITY", "Handle shown")
+            } else {
+                ViewCompat.setSystemGestureExclusionRects(view, emptyList())
+                lastAppliedExclusionRect = null
+                ringBuffer.record("HANDLE_VISIBILITY", "Handle hidden")
+            }
+        }
     }
 
     fun onConfigurationChanged() {

@@ -12,6 +12,7 @@ class SidebarConfigSerializer {
         root.put(KEY_HANDLE_Y_OFFSET_PX, config.handleYOffsetPx)
         root.put(KEY_IS_REPOSITIONING_ENABLED, config.isRepositioningEnabled)
         root.put(KEY_IS_SERVICE_ENABLED, config.isServiceEnabled)
+        root.put(KEY_HIDE_WHEN_APPS_RUNNING, config.hideWhenAppsRunning)
 
         val packagesArray = JSONArray()
         config.pinnedPackages.distinct().forEach { pkg ->
@@ -52,6 +53,10 @@ class SidebarConfigSerializer {
                 KEY_IS_SERVICE_ENABLED,
                 PersistedSidebarConfig.DEFAULT_IS_SERVICE_ENABLED
             )
+            val hideWhenAppsRunning = root.optBoolean(
+                KEY_HIDE_WHEN_APPS_RUNNING,
+                PersistedSidebarConfig.DEFAULT_HIDE_WHEN_APPS_RUNNING
+            )
 
             val pinnedPackages = mutableListOf<String>()
             val packagesArray = root.optJSONArray(KEY_PINNED_PACKAGES)
@@ -81,6 +86,7 @@ class SidebarConfigSerializer {
                 handleYOffsetPx = handleYOffsetPx,
                 isRepositioningEnabled = isRepositioningEnabled,
                 isServiceEnabled = isServiceEnabled,
+                hideWhenAppsRunning = hideWhenAppsRunning,
                 recentStartTimestampsEpochMs = timestamps
             )
         }.getOrElse {
@@ -94,6 +100,7 @@ class SidebarConfigSerializer {
         private const val KEY_HANDLE_Y_OFFSET_PX = "handle_y_offset_px"
         private const val KEY_IS_REPOSITIONING_ENABLED = "is_repositioning_enabled"
         private const val KEY_IS_SERVICE_ENABLED = "is_service_enabled"
+        private const val KEY_HIDE_WHEN_APPS_RUNNING = "hide_when_apps_running"
         private const val KEY_RECENT_START_TIMESTAMPS = "recent_start_timestamps_epoch_ms"
     }
 }

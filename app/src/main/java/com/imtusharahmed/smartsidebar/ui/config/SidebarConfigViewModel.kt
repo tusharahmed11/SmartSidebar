@@ -20,7 +20,9 @@ data class ConfigUiState(
     val apps: List<AppShortcut> = emptyList(),
     val searchQuery: String = "",
     val isServiceRunning: Boolean = false,
-    val isRepositioningEnabled: Boolean = true,
+    val isRepositioningEnabled: Boolean = false,
+    val handleYOffsetPx: Int = 300,
+    val hideWhenAppsRunning: Boolean = false,
     val pinnedCount: Int = 0
 )
 
@@ -34,8 +36,16 @@ class SidebarConfigViewModel(
         repository.getAllApps(),
         searchQueryFlow,
         repository.isServiceRunning(),
-        repository.isRepositioningEnabled()
-    ) { allApps, query, isRunning, isRepositioningEnabled ->
+        repository.getHandleYPosition(),
+        repository.isHideWhenAppsRunning()
+    ) { args: Array<Any> ->
+        @Suppress("UNCHECKED_CAST")
+        val allApps = args[0] as List<AppShortcut>
+        val query = args[1] as String
+        val isRunning = args[2] as Boolean
+        val handleY = args[3] as Int
+        val hideWhenAppsRunning = args[4] as Boolean
+
         val trimmed = query.trim()
         val filtered = if (trimmed.isEmpty()) {
             allApps
@@ -49,7 +59,9 @@ class SidebarConfigViewModel(
             apps = filtered,
             searchQuery = query,
             isServiceRunning = isRunning,
-            isRepositioningEnabled = isRepositioningEnabled,
+            isRepositioningEnabled = false,
+            handleYOffsetPx = handleY,
+            hideWhenAppsRunning = hideWhenAppsRunning,
             pinnedCount = allApps.count { it.isPinned }
         )
     }.stateIn(
@@ -96,9 +108,15 @@ class SidebarConfigViewModel(
         }
     }
 
-    fun onToggleRepositioning(enabled: Boolean) {
+    fun onSetHandleYPosition(yPx: Int) {
         viewModelScope.launch {
-            repository.setRepositioningEnabled(enabled)
+            repository.saveHandleYPosition(yPx)
+        }
+    }
+
+    fun onToggleHideWhenAppsRunning(hide: Boolean) {
+        viewModelScope.launch {
+            repository.setHideWhenAppsRunning(hide)
         }
     }
 

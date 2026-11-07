@@ -22,7 +22,8 @@ class ExampleUnitTest {
             handleYOffsetPx = 640,
             isRepositioningEnabled = false,
             isServiceEnabled = true,
-            recentStartTimestampsEpochMs = listOf(1000L, 2000L, 3000L)
+            recentStartTimestampsEpochMs = listOf(1000L, 2000L, 3000L),
+            hideWhenAppsRunning = true
         )
 
         val encoded = serializer.encode(original)
@@ -34,10 +35,11 @@ class ExampleUnitTest {
         assertFalse(decoded.isRepositioningEnabled)
         assertTrue(decoded.isServiceEnabled)
         assertEquals(listOf(1000L, 2000L, 3000L), decoded.recentStartTimestampsEpochMs)
+        assertTrue(decoded.hideWhenAppsRunning)
     }
 
     @Test
-    fun serializer_backwardCompatibility_defaultsRepositioningToTrue() {
+    fun serializer_backwardCompatibility_defaultsRepositioningToFalse() {
         val legacyJson = """
             {
                 "schema_version": 1,
@@ -49,8 +51,9 @@ class ExampleUnitTest {
         val decoded = serializer.decode(legacyJson)
         assertEquals(1, decoded.schemaVersion)
         assertEquals(500, decoded.handleYOffsetPx)
-        assertTrue(decoded.isRepositioningEnabled)
+        assertFalse(decoded.isRepositioningEnabled)
         assertFalse(decoded.isServiceEnabled)
+        assertFalse(decoded.hideWhenAppsRunning)
         assertEquals(listOf("com.example.app"), decoded.pinnedPackages)
     }
 

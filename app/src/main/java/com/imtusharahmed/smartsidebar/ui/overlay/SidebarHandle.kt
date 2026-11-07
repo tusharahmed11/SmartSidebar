@@ -26,10 +26,10 @@ import kotlin.math.abs
 @Composable
 fun SidebarHandle(
     onOpenDrawer: () -> Unit,
-    onVerticalDragDelta: (Float) -> Unit,
-    onVerticalDragEnd: () -> Unit,
     modifier: Modifier = Modifier,
-    isRepositioningEnabled: Boolean = true
+    isRepositioningEnabled: Boolean = false,
+    onVerticalDragDelta: (Float) -> Unit = {},
+    onVerticalDragEnd: () -> Unit = {}
 ) {
     val density = LocalDensity.current
     val swipeThresholdPx = remember(density) { with(density) { 24.dp.toPx() } }

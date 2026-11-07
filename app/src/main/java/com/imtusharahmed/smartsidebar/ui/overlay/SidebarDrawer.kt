@@ -68,7 +68,7 @@ fun SidebarDrawer(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     handleYOffsetPx: Int = 300,
-    isRepositioningEnabled: Boolean = true,
+    isRepositioningEnabled: Boolean = false,
     minSafeYPx: Int = 0,
     maxSafeYPx: Int = Int.MAX_VALUE,
     onVerticalDragDelta: (Float) -> Unit = {},

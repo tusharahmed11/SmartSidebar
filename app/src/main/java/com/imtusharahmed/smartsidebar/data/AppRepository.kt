@@ -199,6 +199,21 @@ class AppRepository(
         }
     }
 
+    fun isHideWhenAppsRunning(): Flow<Boolean> {
+        return persistedConfigFlow
+            .map { it.hideWhenAppsRunning }
+            .distinctUntilChanged()
+    }
+
+    suspend fun setHideWhenAppsRunning(hide: Boolean) = withContext(ioDispatcher) {
+        dataStore.edit { prefs ->
+            val current = serializer.decode(prefs[KEY_SIDEBAR_CONFIG_JSON])
+            val updated = current.copy(hideWhenAppsRunning = hide)
+            prefs[KEY_SIDEBAR_CONFIG_JSON] = serializer.encode(updated)
+        }
+        ringBuffer.record("CONFIG_UPDATE", "hideWhenAppsRunning=$hide")
+    }
+
     suspend fun setRepositioningEnabled(enabled: Boolean) = withContext(ioDispatcher) {
         dataStore.edit { prefs ->
             val current = serializer.decode(prefs[KEY_SIDEBAR_CONFIG_JSON])

@@ -7,12 +7,15 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.WindowManager
@@ -29,12 +32,16 @@ import java.io.PrintWriter
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 
 class SidebarService : Service() {
@@ -47,6 +54,20 @@ class SidebarService : Service() {
     )
 
     private var overlayWindowManager: OverlayWindowManager? = null
+    private var foregroundAppDetector: ForegroundAppDetector? = null
+    private var appMonitorJob: Job? = null
+    private var isScreenInteractive: Boolean = true
+    private var isHideWhenAppsRunning: Boolean = false
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON -> isScreenInteractive = true
+                Intent.ACTION_SCREEN_OFF -> isScreenInteractive = false
+            }
+        }
+    }
+
     private var serviceStartEpochMs: Long = 0L
     private var isExplicitlyStopped: Boolean = false
 
@@ -55,6 +76,14 @@ class SidebarService : Service() {
     override fun onCreate() {
         super.onCreate()
         serviceStartEpochMs = System.currentTimeMillis()
+        foregroundAppDetector = ForegroundAppDetector(this)
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        isScreenInteractive = pm?.isInteractive ?: true
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }
+        registerReceiver(screenReceiver, filter)
         ensureNotificationChannel()
         inspectPreviousProcessExitReason()
     }
@@ -107,12 +136,6 @@ class SidebarService : Service() {
             initialValue = emptyList()
         )
 
-        val repositioningStateFlow = repository.isRepositioningEnabled().stateIn(
-            scope = serviceScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
-            initialValue = PersistedSidebarConfig.DEFAULT_IS_REPOSITIONING_ENABLED
-        )
-
         val initialY = runCatching {
             repository.getHandleYPosition().first()
         }.getOrDefault(PersistedSidebarConfig.DEFAULT_HANDLE_Y_OFFSET_PX)
@@ -122,12 +145,6 @@ class SidebarService : Service() {
             windowManager = wm,
             ringBuffer = ringBuffer,
             pinnedShortcutsFlow = pinnedStateFlow,
-            isRepositioningEnabledFlow = repositioningStateFlow,
-            onPersistHandleY = { yPx ->
-                serviceScope.launch(CoroutineName("SideBar:OverlayPositionStore")) {
-                    repository.saveHandleYPosition(yPx)
-                }
-            },
             onLaunchPackage = { packageName -> launchPinnedApplication(packageName) },
             onOpenMainActivity = { openMainActivity() }
         )
@@ -140,10 +157,49 @@ class SidebarService : Service() {
                 overlayWindowManager?.setHandleYFromPersistence(savedY)
             }
         }
+
+        serviceScope.launch {
+            repository.isHideWhenAppsRunning().collect { hideWhenRunning ->
+                isHideWhenAppsRunning = hideWhenRunning
+                if (hideWhenRunning) {
+                    startAppMonitoring()
+                } else {
+                    stopAppMonitoring()
+                }
+            }
+        }
+    }
+
+    private fun startAppMonitoring() {
+        if (appMonitorJob?.isActive == true) return
+        val detector = foregroundAppDetector ?: return
+        appMonitorJob = serviceScope.launch(Dispatchers.Default + CoroutineName("SideBar:AppMonitor")) {
+            val homePackages = detector.getHomePackages()
+            ringBuffer.record("APP_MONITOR", "Started foreground app monitor; homePackages=${homePackages.size}")
+            while (isActive) {
+                if (isScreenInteractive) {
+                    val isExternal = detector.isExternalAppForeground(homePackages)
+                    withContext(Dispatchers.Main) {
+                        overlayWindowManager?.setHandleVisibility(!isExternal)
+                    }
+                }
+                delay(400L)
+            }
+        }
+    }
+
+    private fun stopAppMonitoring() {
+        appMonitorJob?.cancel()
+        appMonitorJob = null
+        overlayWindowManager?.setHandleVisibility(true)
+        ringBuffer.record("APP_MONITOR", "Stopped foreground app monitor; handle restored")
     }
 
     private fun launchPinnedApplication(packageName: String) {
         val startMs = System.currentTimeMillis()
+        if (isHideWhenAppsRunning) {
+            overlayWindowManager?.setHandleVisibility(false)
+        }
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         }
@@ -219,6 +275,8 @@ class SidebarService : Service() {
     }
 
     override fun onDestroy() {
+        stopAppMonitoring()
+        runCatching { unregisterReceiver(screenReceiver) }
         overlayWindowManager?.destroyAll()
         overlayWindowManager = null
         repository.setServiceRunningState(false)
